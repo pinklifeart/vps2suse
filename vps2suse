@@ -185,9 +185,16 @@ setup_gateway_systemd_unit() {
 }
 
 finalize() {
-	cat > "/etc/ssh/sshd_config.d/PermitRootLogin.conf" <<-EOF
-		PermitRootLogin yes
-	EOF
+	if [[ -d "sshd_config.d" ]]; then
+		cat > "/etc/ssh/sshd_config.d/PermitRootLogin.conf" <<-EOF
+			PermitRootLogin yes
+		EOF
+	elif [[ grep -w "^PermitRootLogin yes" /etc/ssh/sshd_config == "" ]]; then
+		mkdir -p /etc/ssh/sshd_config.d
+		cat > "/etc/ssh/sshd_config.d/PermitRootLogin.conf" <<-EOF
+			PermitRootLogin yes
+		EOF
+	fi
 	systemctl enable sshd
 
 	cat <<-EOF
