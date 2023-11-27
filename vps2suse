@@ -156,6 +156,34 @@ configure_network() {
 	done
 }
 
+setup_gateway_systemd_unit() {
+	local gateway_route=$(ip -4 r | grep 'default via')
+	local script_dir="/root/.scripts"
+	local script_path="$script_dir/gateway-default.sh"
+	local systemd_unit_name="setup-gateway.service"
+	local systemd_unit_path="/etc/systemd/system/$systemd_unit_name"
+	mkdir -p $script_dir
+	echo -e '#!/usr/bin/env bash\n' >> $script_path
+	echo "$gateway_route" >> $script_path
+	echo "[Unit]
+	Description=Add static routes after network up
+	After=network.target
+
+	[Service]
+	ExecStart=/usr/bin/bash $script_path
+	Type=oneshot
+
+	[Install]
+	WantedBy=network.target" > $systemd_unit_path
+	systemctl daemon-reload
+	systemctl enable $systemd_unit_name
+	if [[ `systemctl is-enabled $systemd_unit_name` == "enabled" ]]; then 
+	    echo "Gateway default route unit setup complete"
+	else
+		echo "Got an error trying to set up systemd gateway unit, might need to check it manually"
+	fi
+}
+
 finalize() {
 	cat > "/etc/ssh/sshd_config.d/PermitRootLogin.conf" <<-EOF
 		PermitRootLogin yes
@@ -229,4 +257,5 @@ restore_root_pass
 cleanup
 configure_bootloader
 configure_network
+setup_gateway_systemd_unit
 finalize
