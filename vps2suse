@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 
 # Copyright 2021, U2FsdGVkX1 <U2FsdGVkX1@gmail.com>
 
@@ -17,7 +17,7 @@
 
 set -e
 
-[ $EUID -ne 0 ] && echo "This script must be run as root" && exit 1
+[ "$(id -u)" -ne 0 ] && echo "This script must be run as root" && exit 1
 
 if command -v wget >/dev/null 2>&1; then
 	download() { wget -O- "$mirror/$*" || wget -O- "http://download.opensuse.org/$*"; }
@@ -29,8 +29,6 @@ else
 fi
 
 download_and_extract_bootstrap() {
-	local filename
-
 	download "repositories/Virtualization:/containers:/images:/openSUSE-$version/$container/opensuse-$versionlower-image.$cpu_type-lxc.tar.xz.sha256" > sha256sums.txt
 	filename=$(awk '{print $2}' sha256sums.txt)
 	download "repositories/Virtualization:/containers:/images:/openSUSE-$version/$container/$filename" > "$filename"
@@ -53,6 +51,7 @@ download_and_extract_bootstrap() {
 	mount --make-rslave --rbind /dev /openSUSE/dev
 	mount --make-rslave --rbind /run /openSUSE/run
 	mount --bind / /openSUSE/mnt
+	unset filename
 }
 
 save_root_pass() {
@@ -88,11 +87,12 @@ configure_chroot() {
 }
 
 install_packages() {
-	local patterns="enhanced_base bootloader yast2_basis yast2_server"
-	local packages="wicked kernel-default scout lvm2 man iptables iputils"
+	patterns="enhanced_base bootloader yast2_basis yast2_server"
+	packages="wicked kernel-default scout lvm2 man iptables iputils"
 	chroot_exec "zypper -i --root=/mnt in -y -t pattern $patterns"
 	/usr/sbin/update-ca-certificates
 	zypper in -y "$packages"
+	unset patterns packages
 }
 
 restore_root_pass() {
@@ -124,14 +124,12 @@ configure_bootloader() {
 	
 	systemd-machine-id-setup && dracut -f --regenerate-all
 	if [ -d /sys/firmware/efi ]; then
-		local efi_directory
 		efi_directory=$(df --type=vfat | tail -n1 | awk '{print $6}')
 		/usr/sbin/grub2-install --recheck --removable --efi-directory="$efi_directory"
 		cat > /etc/sysconfig/bootloader <<-EOF
 			LOADER_TYPE="grub2-efi"
 		EOF
 	else
-		local root_dev
 		root_dev=$(findmnt -no SOURCE /)
 		root_dev=$(lsblk -npsro TYPE,NAME "$root_dev" | awk '$1 == "disk" {print $2}' | head -1)
 		/usr/sbin/grub2-install --recheck --force "$root_dev"
@@ -140,14 +138,11 @@ configure_bootloader() {
 		EOF
 	fi
 	/sbin/update-bootloader
+	unset efi_directory root_dev
 }
 
 configure_network() {
 	for dev in $(ip -br l | awk '$2 == "UP" {split($1, r, "@"); print r[1]}'); do
-		local ip
-		local routes
-		local gateway
-
 		ip="$(ip -br a s "$dev" scope global | awk '{for(i=3;i<=NF;i++) printf "IPADDR%d=%s\n", i-3, $i}')"
 		routes="$(ip -4 r s default; ip -6 r s default)"
 		gateway="$(echo "$routes" | awk -v dev="$dev" '$5 == dev {printf "default %s\n", $3}')"
@@ -160,15 +155,21 @@ configure_network() {
 			$gateway
 		EOF
 	done
+	unset dev ip routes gateway
 }
 
 setup_gateway_systemd_unit() {
-	local gateway_route
+	# Creates a systemd unit to persist a gateway rule like:
+	# default via xxx.xxx.xxx.xxx dev eth0
+	if [ "$(ip -4 r | grep 'default via')" = "" ]; then 
+		echo "No 'default via' rules found, skipping systemd unit setup."
+		return
+	fi
 	gateway_route=$(ip -4 r | grep 'default via')
-	local script_dir="/root/.scripts"
-	local script_path="$script_dir/gateway-default.sh"
-	local systemd_unit_name="setup-gateway.service"
-	local systemd_unit_path="/etc/systemd/system/$systemd_unit_name"
+	script_dir="/root/.scripts"
+	script_path="$script_dir/gateway-default.sh"
+	systemd_unit_name="setup-gateway.service"
+	systemd_unit_path="/etc/systemd/system/$systemd_unit_name"
 	mkdir -p $script_dir
 	cat > $script_path <<-EOF
 		#!/usr/bin/env bash
@@ -189,19 +190,20 @@ setup_gateway_systemd_unit() {
 		WantedBy=network.target
 	EOF
 	systemctl enable $systemd_unit_name
-	if [[ $(systemctl is-enabled $systemd_unit_name) == "enabled" ]]; then 
-	    echo "Gateway default route unit setup complete"
+	if [ "$(systemctl is-enabled $systemd_unit_name)" = "enabled" ]; then 
+	    echo "Gateway default route unit setup complete, check $script_path just in case for anything broken."
 	else
-		echo "Got an error trying to set up systemd gateway unit, might need to check it manually"
+		echo "Got an error trying to set up systemd gateway unit, might need to check it manually."
 	fi
+	unset gateway_route script_dir script_path systemd_unit_name systemd_unit_path
 }
 
 finalize() {
-	if [[ -d "sshd_config.d" ]]; then
+	if [ -d "sshd_config.d" ]; then
 		cat > "/etc/ssh/sshd_config.d/PermitRootLogin.conf" <<-EOF
 			PermitRootLogin yes
 		EOF
-	elif [[ $(grep -w "^PermitRootLogin yes" /etc/ssh/sshd_config) == "" ]]; then
+	elif [ "$(grep -w "^PermitRootLogin yes" /etc/ssh/sshd_config)" = "" ]; then
 		mkdir -p /etc/ssh/sshd_config.d
 		cat > "/etc/ssh/sshd_config.d/PermitRootLogin.conf" <<-EOF
 			PermitRootLogin yes
@@ -223,7 +225,7 @@ finalize() {
 cpu_type=$(uname -m)
 version=Tumbleweed
 mirror=http://download.opensuse.org
-container=containers
+container=container
 ld=
 if [ "$cpu_type" = aarch64 ]; then
 	container='container_ARM'
@@ -233,6 +235,15 @@ while getopts "s:c:m:h:" opt; do
 	case $opt in
 	s)
 		version="$OPTARG"
+		case $version in
+		*Leap-15.4|*Leap-15.5|*Leap-15.6)
+			echo "Leap distributions above 15.3 are currently not supported. You can try installing 15.3 and upgrading manually afterwards."
+			exit 1
+			;;
+		*Leap*) 
+			# Fixes URI for the leap distribution.
+			container="containers" ;;
+		esac
 		;;
 	c)
 		container="$OPTARG"
