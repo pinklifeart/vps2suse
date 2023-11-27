@@ -91,7 +91,7 @@ install_packages() {
 	packages="wicked kernel-default scout lvm2 man iptables iputils"
 	chroot_exec "zypper -i --root=/mnt in -y -t pattern $patterns"
 	/usr/sbin/update-ca-certificates
-	# Here we actually want words to split, therefore no quotes.
+	# Here we actually want the words to split, therefore no quotes.
 	zypper in -y $packages
 	unset patterns packages
 }
@@ -160,7 +160,7 @@ configure_network() {
 }
 
 setup_gateway_systemd_unit() {
-	# Creates a systemd unit to persist a gateway rule like:
+	# Creates a systemd unit to persist a gateway ipv4 rule like:
 	# default via xxx.xxx.xxx.xxx dev eth0
 	if [ "$(ip -4 r | grep 'default via')" = "" ]; then 
 		echo "No 'default via' rules found, skipping systemd unit setup."
