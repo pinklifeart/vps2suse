@@ -176,7 +176,7 @@ finalize() {
 cpu_type=$(uname -m)
 version=Tumbleweed
 mirror=http://download.opensuse.org
-container=container
+container=containers
 ld=
 if [ $cpu_type = aarch64 ]; then
 	container='container_ARM'
