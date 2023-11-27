@@ -91,7 +91,8 @@ install_packages() {
 	packages="wicked kernel-default scout lvm2 man iptables iputils"
 	chroot_exec "zypper -i --root=/mnt in -y -t pattern $patterns"
 	/usr/sbin/update-ca-certificates
-	zypper in -y "$packages"
+	# Here we actually want words to split, therefore no quotes.
+	zypper in -y $packages
 	unset patterns packages
 }
 
