@@ -164,7 +164,8 @@ setup_gateway_systemd_unit() {
 	local systemd_unit_path="/etc/systemd/system/$systemd_unit_name"
 	mkdir -p $script_dir
 	echo -e '#!/usr/bin/env bash\n' >> $script_path
-	echo "$gateway_route" >> $script_path
+	chmod 700 $script_path
+	echo "ip route add $gateway_route" >> $script_path
 	echo "[Unit]
 	Description=Add static routes after network up
 	After=network.target
