@@ -163,19 +163,24 @@ setup_gateway_systemd_unit() {
 	local systemd_unit_name="setup-gateway.service"
 	local systemd_unit_path="/etc/systemd/system/$systemd_unit_name"
 	mkdir -p $script_dir
-	echo -e '#!/usr/bin/env bash\n' >> $script_path
+	cat > $script_path <<-EOF
+		#!/usr/bin/env bash
+
+		ip route add $gateway_route
+	EOF
 	chmod 700 $script_path
-	echo "ip route add $gateway_route" >> $script_path
-	echo "[Unit]
-	Description=Add static routes after network up
-	After=network.target
+	cat > $systemd_unit_path <<-EOF
+		[Unit]
+		Description=Add static routes after network up
+		After=network.target
 
-	[Service]
-	ExecStart=/usr/bin/bash $script_path
-	Type=oneshot
+		[Service]
+		ExecStart=/usr/bin/bash $script_path
+		Type=oneshot
 
-	[Install]
-	WantedBy=network.target" > $systemd_unit_path
+		[Install]
+		WantedBy=network.target
+	EOF
 	systemctl enable $systemd_unit_name
 	if [[ `systemctl is-enabled $systemd_unit_name` == "enabled" ]]; then 
 	    echo "Gateway default route unit setup complete"
