@@ -175,7 +175,6 @@ setup_gateway_systemd_unit() {
 
 	[Install]
 	WantedBy=network.target" > $systemd_unit_path
-	systemctl daemon-reload
 	systemctl enable $systemd_unit_name
 	if [[ `systemctl is-enabled $systemd_unit_name` == "enabled" ]]; then 
 	    echo "Gateway default route unit setup complete"
