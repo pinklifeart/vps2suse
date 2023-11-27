@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 
 # Copyright 2021, U2FsdGVkX1 <U2FsdGVkX1@gmail.com>
 
@@ -20,33 +20,33 @@ set -e
 [ $EUID -ne 0 ] && echo "This script must be run as root" && exit 1
 
 if command -v wget >/dev/null 2>&1; then
-	download() { wget -O- "$mirror/$@" || wget -O- "http://download.opensuse.org/$@"; }
+	download() { wget -O- "$mirror/$*" || wget -O- "http://download.opensuse.org/$*"; }
 elif command -v curl >/dev/null 2>&1; then
-	download() { curl -fL "$mirror/$@" || curl -fL "http://download.opensuse.org/$@"; }
+	download() { curl -fL "$mirror/$*" || curl -fL "http://download.opensuse.org/$*"; }
 else
 	echo "This script needs curl or wget" >&2
 	exit 2
 fi
 
 download_and_extract_bootstrap() {
-	local sha256 filename
+	local filename
 
 	download "repositories/Virtualization:/containers:/images:/openSUSE-$version/$container/opensuse-$versionlower-image.$cpu_type-lxc.tar.xz.sha256" > sha256sums.txt
-	read -r sha256 filename < sha256sums.txt
-	download "repositories/Virtualization:/containers:/images:/openSUSE-$version/$container/$filename" > $filename
+	filename=$(awk '{print $2}' sha256sums.txt)
+	download "repositories/Virtualization:/containers:/images:/openSUSE-$version/$container/$filename" > "$filename"
 	sha256sum -c sha256sums.txt || exit 1
 
 	mkdir openSUSE
-	tar -xpf $filename -C /openSUSE
-	rm -f $filename
+	tar -xpf "$filename" -C /openSUSE
+	rm -f "$filename"
 
 	if grep -E "^nameserver\s+127\." /etc/resolv.conf > /dev/null; then
 		echo "nameserver 8.8.8.8" > /openSUSE/etc/resolv.conf
 	else
 		cp -Lp /etc/resolv.conf /openSUSE/etc
 	fi
-	find /openSUSE/etc/zypp/repos.d -name "*oss.repo" | xargs sed -i "s#http://download.opensuse.org#$mirror#g"
-	ld=`find /openSUSE/lib/ /openSUSE/lib64/ -name "ld-linux*.so*" -print -quit`
+	find /openSUSE/etc/zypp/repos.d -name "*oss.repo" -print0 | xargs -0 sed -i "s#http://download.opensuse.org#$mirror#g"
+	ld=$(find /openSUSE/lib/ /openSUSE/lib64/ -name "ld-linux*.so*" -print -quit)
 
 	mount -t proc /proc /openSUSE/proc
 	mount --make-rslave --rbind /sys /openSUSE/sys
@@ -92,12 +92,12 @@ install_packages() {
 	local packages="wicked kernel-default scout lvm2 man iptables iputils"
 	chroot_exec "zypper -i --root=/mnt in -y -t pattern $patterns"
 	/usr/sbin/update-ca-certificates
-	zypper in -y $packages
+	zypper in -y "$packages"
 }
 
 restore_root_pass() {
 	# If the root password is not set, use vps2suse
-	if egrep -q '^root:.?:' /openSUSE/root.passwd; then
+	if grep -E -q '^root:.?:' /openSUSE/root.passwd; then
 		echo "root:vps2suse" | chpasswd
 	else
 		sed -i '/^root:/d' /etc/shadow
@@ -124,13 +124,15 @@ configure_bootloader() {
 	
 	systemd-machine-id-setup && dracut -f --regenerate-all
 	if [ -d /sys/firmware/efi ]; then
-		local efi_directory=$(df --type=vfat | tail -n1 | awk '{print $6}')
-		/usr/sbin/grub2-install --recheck --removable --efi-directory=$efi_directory
+		local efi_directory
+		efi_directory=$(df --type=vfat | tail -n1 | awk '{print $6}')
+		/usr/sbin/grub2-install --recheck --removable --efi-directory="$efi_directory"
 		cat > /etc/sysconfig/bootloader <<-EOF
 			LOADER_TYPE="grub2-efi"
 		EOF
 	else
-		local root_dev=$(findmnt -no SOURCE /)
+		local root_dev
+		root_dev=$(findmnt -no SOURCE /)
 		root_dev=$(lsblk -npsro TYPE,NAME "$root_dev" | awk '$1 == "disk" {print $2}' | head -1)
 		/usr/sbin/grub2-install --recheck --force "$root_dev"
 		cat > /etc/sysconfig/bootloader <<-EOF
@@ -142,9 +144,13 @@ configure_bootloader() {
 
 configure_network() {
 	for dev in $(ip -br l | awk '$2 == "UP" {split($1, r, "@"); print r[1]}'); do
-		local ip="$(ip -br a s $dev scope global | awk '{for(i=3;i<=NF;i++) printf "IPADDR%d=%s\n", i-3, $i}')"
-		local routes="$(ip -4 r s default; ip -6 r s default)"
-		local gateway="$(echo "$routes" | awk -v dev=$dev '$5 == dev {printf "default %s\n", $3}')"
+		local ip
+		local routes
+		local gateway
+
+		ip="$(ip -br a s "$dev" scope global | awk '{for(i=3;i<=NF;i++) printf "IPADDR%d=%s\n", i-3, $i}')"
+		routes="$(ip -4 r s default; ip -6 r s default)"
+		gateway="$(echo "$routes" | awk -v dev="$dev" '$5 == dev {printf "default %s\n", $3}')"
 
 		cat > "/etc/sysconfig/network/ifcfg-$dev" <<-EOF
 			STARTMODE=auto
@@ -157,7 +163,8 @@ configure_network() {
 }
 
 setup_gateway_systemd_unit() {
-	local gateway_route=$(ip -4 r | grep 'default via')
+	local gateway_route
+	gateway_route=$(ip -4 r | grep 'default via')
 	local script_dir="/root/.scripts"
 	local script_path="$script_dir/gateway-default.sh"
 	local systemd_unit_name="setup-gateway.service"
@@ -182,7 +189,7 @@ setup_gateway_systemd_unit() {
 		WantedBy=network.target
 	EOF
 	systemctl enable $systemd_unit_name
-	if [[ `systemctl is-enabled $systemd_unit_name` == "enabled" ]]; then 
+	if [[ $(systemctl is-enabled $systemd_unit_name) == "enabled" ]]; then 
 	    echo "Gateway default route unit setup complete"
 	else
 		echo "Got an error trying to set up systemd gateway unit, might need to check it manually"
@@ -194,7 +201,7 @@ finalize() {
 		cat > "/etc/ssh/sshd_config.d/PermitRootLogin.conf" <<-EOF
 			PermitRootLogin yes
 		EOF
-	elif [[ `grep -w "^PermitRootLogin yes" /etc/ssh/sshd_config` == "" ]]; then
+	elif [[ $(grep -w "^PermitRootLogin yes" /etc/ssh/sshd_config) == "" ]]; then
 		mkdir -p /etc/ssh/sshd_config.d
 		cat > "/etc/ssh/sshd_config.d/PermitRootLogin.conf" <<-EOF
 			PermitRootLogin yes
@@ -218,7 +225,7 @@ version=Tumbleweed
 mirror=http://download.opensuse.org
 container=containers
 ld=
-if [ $cpu_type = aarch64 ]; then
+if [ "$cpu_type" = aarch64 ]; then
 	container='container_ARM'
 fi
 
@@ -256,7 +263,7 @@ while getopts "s:c:m:h:" opt; do
 	esac
 done
 shift $((OPTIND - 1))
-versionlower=$(echo $version | awk -F- '{print tolower($1)}')
+versionlower=$(echo "$version" | awk -F- '{print tolower($1)}')
 
 cd /
 download_and_extract_bootstrap
