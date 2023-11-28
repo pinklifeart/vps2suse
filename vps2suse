@@ -29,9 +29,11 @@ else
 fi
 
 download_and_extract_bootstrap() {
-	download "repositories/Virtualization:/containers:/images:/openSUSE-$version/$container/opensuse-$versionlower-image.$cpu_type-lxc.tar.xz.sha256" > sha256sums.txt
+	# download "repositories/Virtualization:/containers:/images:/openSUSE-$version/$container/opensuse-$versionlower-image.$cpu_type-lxc.tar.xz.sha256" > sha256sums.txt
+	download "distribution/leap/15.5/appliances/opensuse-leap-image.x86_64-lxc.tar.xz.sha256" > sha256sums.txt
 	filename=$(awk '{print $2}' sha256sums.txt)
-	download "repositories/Virtualization:/containers:/images:/openSUSE-$version/$container/$filename" > "$filename"
+	# download "repositories/Virtualization:/containers:/images:/openSUSE-$version/$container/$filename" > "$filename"
+	download "distribution/leap/15.5/appliances/opensuse-leap-image.x86_64-lxc.tar.xz"
 	sha256sum -c sha256sums.txt || exit 1
 
 	mkdir openSUSE
