@@ -92,6 +92,7 @@ install_packages() {
 	chroot_exec "zypper -i --root=/mnt in -y -t pattern $patterns"
 	/usr/sbin/update-ca-certificates
 	# Here we actually want the words to split, therefore no quotes.
+	# shellcheck disable=SC2086
 	zypper in -y $packages
 	unset patterns packages
 }
@@ -154,6 +155,9 @@ configure_network() {
 		EOF
 		cat > "/etc/sysconfig/network/ifroute-$dev" <<-EOF
 			$gateway
+		EOF
+		cat >> "/etc/sysconfig/network/routes" <<-EOF
+			$gateway - - $dev
 		EOF
 	done
 	unset dev ip routes gateway
